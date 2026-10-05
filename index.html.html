@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Miller Indices Lab</title>
+<style>
+:root{--t:#1b2433;--m:#5b6678;--a:#2563eb;--g:#16a34a;--r:#dc2626;--b:#d5dbe6;--bg:#f6f8fb}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.45 system-ui,sans-serif;color:var(--t);background:var(--bg)}
+main{max-width:980px;margin:auto;padding:14px}
+h1{font-size:1.4rem;margin:.2em 0}.sub{color:var(--m);margin:0 0 10px}
+#tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+button,select,input{font:inherit}
+#tabs button{padding:8px 12px;border:1px solid var(--b);background:#fff;border-radius:8px;cursor:pointer}
+#tabs button[aria-selected=true]{background:var(--a);color:#fff;border-color:var(--a)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}
+.grid{display:grid;grid-template-columns:260px 1fr;gap:12px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+section{background:#fff;border:1px solid var(--b);border-radius:10px;padding:12px}
+label{display:block;margin:0 0 10px;font-weight:600}
+select,input[type=number]{display:block;width:100%;padding:7px;margin-top:4px;border:1px solid var(--b);border-radius:6px}
+input[type=checkbox]{display:inline;width:auto;margin-right:6px}
+.btn{padding:8px 12px;border:0;border-radius:8px;background:var(--a);color:#fff;cursor:pointer;margin:2px 4px 2px 0}
+.btn.g{background:#64748b}
+.n{color:var(--m);font-size:.9rem}
+svg{width:100%;max-width:420px;display:block;margin:auto;background:#fbfcfe;border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:.95rem;margin:8px 0}
+td,th{border:1px solid var(--b);padding:4px 8px;text-align:center}td:first-child{text-align:left;color:var(--m)}
+.res{font-size:1.4rem;font-weight:700;color:var(--a);text-align:center;margin:6px 0}
+.o{text-decoration:overline}
+.ok{color:var(--g);font-weight:600}.bad{color:var(--r);font-weight:600}
+.box{background:#eef4ff;border-left:4px solid var(--a);padding:6px 10px;margin:8px 0;border-radius:4px}
+</style></head><body><main>
+<h1>Miller Indices Lab (cubic crystals)</h1>
+<p class="sub">Pick a mode, change the values, and watch the plane or direction update in the unit cell.</p>
+<div id="tabs" role="tablist"></div>
+<div class="grid">
+<section id="ctl" aria-label="Controls"></section>
+<section><svg id="svg" viewBox="0 0 340 300" role="img" aria-label="Cubic unit cell with plane or direction"></svg>
+<div id="out" aria-live="polite"></div></section></div>
+<p><button class="btn g" id="reset">Reset / Start again</button></p>
+<script>
+const $=id=>document.getElementById(id);
+const gcd=(a,b)=>b?gcd(b,a%b):Math.abs(a), lcm=(a,b)=>a/gcd(a,b)*b;
+const simp=(n,d)=>{if(d<0){n=-n;d=-d}const g=gcd(n,d)||1;return[n/g,d/g]};
+const fr=s=>{if(s==='inf')return null;const p=s.split('/');return simp(+p[0],p[1]?+p[1]:1)};
+const fs=f=>f===null?'∞':f[1]===1?''+f[0]:f[0]+'/'+f[1];
+const ix=n=>n<0?`<span class="o">${-n}</span>`:''+n;
+const tup=(a,o,c)=>o+a.map(ix).join(' ')+c;
+const T=['1 Intercepts → Miller','2 Miller → Plane','3 Direction [uvw]','4 Challenge'];
+const OPT=['inf','1/3','1/2','2/3','1','3/2','2','3','-1/3','-1/2','-1','-2'];
+const POOL=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1],[1,1,1],[2,1,0],[1,2,0],[0,1,2],[2,0,1],[2,1,1],[1,2,2],[1,1,2],[2,2,1],[1,2,3]];
+const PN={'0,0,1':'a cube-face plane.','0,1,1':'a diagonal plane cutting through two opposite edges.','1,1,1':'an octahedral plane. It is the close-packed plane in FCC metals (e.g. Al, Cu, Ni).'};
+const DN={'0,0,1':'a cube edge (the close-packed direction in simple cubic).','0,1,1':'a face diagonal (close-packed direction in FCC).','1,1,1':'a body diagonal (close-packed direction in BCC).'};
+const key=a=>a.map(Math.abs).sort().join(',');
+let S;
+function init(){S={m:0,sel:['1','1','inf'],hkl:[1,1,0],uvw:[1,1,0],nrm:false,ans:[0,0,0],t:null,att:0,done:false,sc:0,tot:0,msg:''};newT()}
+function newT(){S.t=POOL[Math.floor(Math.random()*POOL.length)];S.att=0;S.done=false;S.ans=[0,0,0];S.msg='Enter the indices you read from the drawing, then press Check.'}
+// ---- geometry
+const P=(x,y,z)=>[40+170*x+68*y,265-170*z-42*y];
+const V=[];for(let i=0;i<8;i++)V.push([i&1,(i>>1)&1,(i>>2)&1]);
+const E=[];for(let i=0;i<8;i++)for(const b of[1,2,4])if(!(i&b))E.push([i,i|b]);
+function clip(a,d){const p=[];const add=q=>{if(!p.some(r=>Math.hypot(r[0]-q[0],r[1]-q[1],r[2]-q[2])<1e-6))p.push(q)};
+ for(const[i,j]of E){const A=V[i],B=V[j];const fa=a[0]*A[0]+a[1]*A[1]+a[2]*A[2]-d,fb=a[0]*B[0]+a[1]*B[1]+a[2]*B[2]-d;
+  if(Math.abs(fa)<1e-9)add(A);if(Math.abs(fb)<1e-9)add(B);
+  if(fa*fb<-1e-12){const t=fa/(fa-fb);add(A.map((v,k)=>v+t*(B[k]-v)))}}
+ if(p.length<3)return p;
+ const q=p.map(v=>P(...v)),cx=q.reduce((s,v)=>s+v[0],0)/q.length,cy=q.reduce((s,v)=>s+v[1],0)/q.length;
+ return p.map((v,i)=>[v,Math.atan2(q[i][1]-cy,q[i][0]-cx)]).sort((x,y)=>x[1]-y[1]).map(x=>x[0])}
+function dots(a,d){const r=[];for(let i=0;i<3;i++)if(Math.abs(a[i])>1e-9){const t=d/a[i];if(t>-1e-9&&t<1+1e-9){const p=[0,0,0];p[i]=t;r.push(p)}}return r}
+function draw(o){let s=`<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0,0L8,4L0,8z" fill="#dc2626"/></marker></defs>`;
+ const L=(p,q,c,w,dash)=>{const a=P(...p),b=P(...q);return`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${c}" stroke-width="${w}" ${dash?'stroke-dasharray="5 4"':''}/>`};
+ for(const[i,j]of E)s+=L(V[i],V[j],'#475569',1.6,i==2||j==2);
+ [['x',1.3,0,0],['y',0,1.3,0],['z',0,0,1.3]].forEach(a=>{s+=L([0,0,0],a.slice(1),'#94a3b8',1);const q=P(...a.slice(1));s+=`<text x="${q[0]+4}" y="${q[1]+4}" font-size="14" fill="#475569">${a[0]}</text>`});
+ const O=P(0,0,0);s+=`<text x="${O[0]-14}" y="${O[1]+14}" font-size="12" fill="#475569">O</text>`;
+ if(o.pts&&o.pts.length>=3){s+=`<polygon points="${o.pts.map(v=>P(...v).join(',')).join(' ')}" fill="rgba(37,99,235,.35)" stroke="#2563eb" stroke-width="2"/>`}
+ (o.dots||[]).forEach(v=>{const q=P(...v);s+=`<circle cx="${q[0]}" cy="${q[1]}" r="5" fill="#f59e0b" stroke="#fff"/>`});
+ if(o.vec){const a=P(...o.vec[0]),b=P(...o.vec[1]);s+=`<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#dc2626" stroke-width="3.5" marker-end="url(#ar)"/><circle cx="${a[0]}" cy="${a[1]}" r="4" fill="#dc2626"/>`}
+ $('svg').innerHTML=s}
+// ---- modes
+const note=(a,M)=>(M[key(a)]?`<div class="box">This is ${M[key(a)]}</div>`:'');
+const warn=t=>{draw({});return`<p class="bad">${t}</p>`};
+function m1(){const f=S.sel.map(fr);if(f.every(x=>x===null))return warn('A plane must cut at least one axis. Pick a finite intercept.');
+ const rc=f.map(x=>x===null?[0,1]:simp(x[1],x[0]));let L=1;rc.forEach(r=>L=lcm(L,r[1]));
+ let ints=rc.map(r=>r[0]*L/r[1]);const G=ints.reduce((g,x)=>gcd(g,x),0);ints=ints.map(x=>x/G);
+ const a=rc.map(r=>r[0]/r[1]);let pts=clip(a,1),fb='',dt=dots(a,1);
+ if(pts.length<3){const d=1-ints.filter(x=>x<0).reduce((s,x)=>s-x,0);pts=clip(ints,d);dt=[];
+  fb='<p class="n">Your intercepts fall outside this one unit cell, so the picture shows the parallel plane of the same (hkl) family that lies inside the cell.</p>'}
+ draw({pts,dots:dt});
+ const row=(n,arr)=>`<tr><td>${n}</td>${arr.map(v=>`<td>${v}</td>`).join('')}</tr>`;
+ return`<table><tr><th></th><th>x</th><th>y</th><th>z</th></tr>${row('1. Intercepts',f.map(fs))}${row('2. Reciprocals',rc.map(r=>fs(r)))}${row('3. ×'+L+' (clear fractions)',rc.map(r=>r[0]*L/r[1]))}${row('4. ÷'+G+' (reduce)',ints.map(ix))}</table>
+ <div class="res">Miller indices ${tup(ints,'(',')')}</div>${fb}
+ <p class="n">∞ intercept → reciprocal 0 → plane is parallel to that axis. Smaller intercept → larger index.</p>${note(ints,PN)}`}
+function m2(){const h=S.hkl;if(!h.some(x=>x))return warn('At least one index must be non-zero.');
+ const neg=h.filter(x=>x<0).reduce((s,x)=>s-x,0),d=1-neg,g=h.reduce((g,x)=>gcd(g,x),0);
+ const pts=clip(h,d);draw({pts,dots:neg?[]:dots(h,d),vec:S.nrm&&pts.length>2?(()=>{const c=[0,1,2].map(k=>pts.reduce((s,v)=>s+v[k],0)/pts.length),m=Math.max(...h.map(Math.abs));return[c,c.map((v,k)=>v+h[k]/m*.4)]})():null});
+ let w=`<table><tr><th></th><th>x</th><th>y</th><th>z</th></tr><tr><td>Index</td>${h.map(x=>`<td>${ix(x)}</td>`).join('')}</tr><tr><td>Intercept = 1/index</td>${h.map(x=>`<td>${x?fs(simp(Math.sign(x),Math.abs(x))):'∞'}</td>`).join('')}</tr></table>`;
+ w+=`<div class="res">Plane ${tup(h,'(',')')}</div><p class="n">Plane equation: ${h.map((x,i)=>x?`${x}·${'xyz'[i]}`:'').filter(Boolean).join(' + ').replace(/\+ -/g,'− ')} = ${d}</p>`;
+ if(neg)w+='<p class="n">Negative index (bar): the origin is moved to the opposite corner so the plane stays inside the cell.</p>';
+ if(g>1)w+=`<p class="n">Indices share a factor of ${g}. (${h.map(x=>x/g).join(' ')}) is parallel, but ${tup(h,'(',')')} has ${g}× more planes per unit length, so its spacing is ${g}× smaller.</p>`;
+ return w+(S.nrm?'<p class="n">Red arrow: direction ['+h.map(ix).join(' ')+'], which is perpendicular to the (hkl) plane in cubic crystals.</p>':'')+note(h,PN)}
+function m3(){const u=S.uvw;if(!u.some(x=>x))return warn('At least one component must be non-zero.');
+ const m=Math.max(...u.map(Math.abs)),g=u.reduce((g,x)=>gcd(g,x),0),t=u.map(x=>x<0?1:0),h=u.map((x,i)=>t[i]+x/m),red=u.map(x=>x/g);
+ draw({vec:[t,h]});const r=x=>+x.toFixed(2);
+ return`<table><tr><th></th><th>x</th><th>y</th><th>z</th></tr><tr><td>Tail (start)</td>${t.map(x=>`<td>${x}</td>`).join('')}</tr><tr><td>Head (end)</td>${h.map(x=>`<td>${r(x)}</td>`).join('')}</tr><tr><td>Head − Tail</td>${h.map((x,i)=>`<td>${r(x-t[i])}</td>`).join('')}</tr><tr><td>× ${m}, reduce</td>${red.map(x=>`<td>${ix(x)}</td>`).join('')}</tr></table>
+ <div class="res">Direction ${tup(red,'[',']')}</div>
+ <p class="n">A direction is head − tail, scaled to the smallest integers. No reciprocals here (unlike planes). Negative components start at the far face of the cell.</p>${note(red,DN)}`}
+function m4(){const t=S.t;draw({pts:clip(t,1),dots:dots(t,1)});
+ return`<p>Read where the plane cuts the x, y, z axes (orange dots). Which Miller indices describe it?</p><div class="box">${S.msg}</div><p>Score: <b>${S.sc}</b> / ${S.tot}</p>`}
+function update(){$('out').innerHTML=[m1,m2,m3,m4][S.m]()}
+// ---- controls
+function ctl(){let h='',m=S.m;
+ if(m==0){['x','y','z'].forEach((a,i)=>h+=`<label>${a}-intercept<select data-i="${i}">${OPT.map(o=>`<option value="${o}"${S.sel[i]==o?' selected':''}>${o=='inf'?'∞ (parallel to axis)':o}</option>`).join('')}</select></label>`);
+  h+='<p class="n">Intercepts are in units of the cell edge. Choose them and see the indices calculated.</p>'}
+ else{const lab=m==2?['u','v','w']:['h','k','l'],arr=m==1?S.hkl:m==2?S.uvw:S.ans;
+  lab.forEach((a,i)=>h+=`<label>${a}<input type="number" min="-3" max="3" step="1" data-i="${i}" value="${arr[i]}"></label>`);
+  if(m==1)h+=`<label><input type="checkbox" id="nrm" ${S.nrm?'checked':''}>Show normal direction [hkl]</label>`;
+  if(m==3)h+='<button class="btn" data-a="chk">Check</button><button class="btn g" data-a="new">New plane</button><p class="n">Enter values from −3 to 3. Use a negative number for a bar index.</p>'}
+ $('ctl').innerHTML=h}
+$('ctl').addEventListener('input',e=>{const t=e.target;
+ if(t.tagName=='SELECT')S.sel[+t.dataset.i]=t.value;
+ else if(t.type=='checkbox')S.nrm=t.checked;
+ else{const v=parseInt(t.value);if(isNaN(v))return;const arr=S.m==1?S.hkl:S.m==2?S.uvw:S.ans;arr[+t.dataset.i]=Math.max(-3,Math.min(3,v))}
+ update()});
+$('ctl').addEventListener('click',e=>{const a=e.target.dataset.a;if(!a)return;
+ if(a=='new'){newT();ctl();update();return}
+ if(S.done)return;
+ const t=S.t,an=S.ans,ok=an.every((x,i)=>x===t[i])||an.every((x,i)=>x===-t[i]);
+ if(ok){S.done=true;S.tot++;if(S.att==0)S.sc++;S.msg=`<span class="ok">Correct! ${tup(t,'(',')')}</span>. Intercepts: ${t.map(x=>x?'1/'+x:'∞').join(', ')} → reciprocals ${t.join(', ')}. Press “New plane” to continue.`}
+ else{S.att++;if(S.att==1)S.msg='<span class="bad">Not quite.</span> Hint: take the reciprocal of each intercept; a plane parallel to an axis (no dot) gives 0.';
+  else{S.done=true;S.tot++;S.msg=`<span class="bad">Answer: ${tup(t,'(',')')}</span>. Intercepts ${t.map(x=>x?'1/'+x:'∞').join(', ')} → reciprocals ${t.join(', ')}. Try “New plane”.`}}
+ update()});
+$('tabs').innerHTML=T.map((x,i)=>`<button role="tab" data-i="${i}">${x}</button>`).join('');
+$('tabs').addEventListener('click',e=>{const i=e.target.dataset.i;if(i===undefined)return;S.m=+i;tabs();ctl();update()});
+function tabs(){[...$('tabs').children].forEach((b,i)=>b.setAttribute('aria-selected',i==S.m))}
+$('reset').onclick=()=>{init();tabs();ctl();update()};
+init();tabs();ctl();update();
+</script></main></body></html>
